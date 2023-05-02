@@ -2,6 +2,7 @@ use integer_encoding::*;
 use std::str;
 use std::collections::HashMap;
 use multibase::Base;
+use anyhow::{anyhow, Result};
 
 /**
  * Multicodec Codes https://github.com/multiformats/multicodec/blob/master/table.csv
@@ -19,9 +20,9 @@ use multibase::Base;
  const RSA_CODE: u32 = 0x1205; // rsa-pub
  const KEY_CODES: [u32; 8] = [SECP256K1_CODE, BLS12_381_G2_CODE, X25519_CODE, ED25519_CODE, P256_CODE, P384_CODE, P521_CODE, RSA_CODE];
 
-fn key_method_code_len(code: &u32, key_prefix: &[u8]) ->  Result<u16, &'static str> {
+fn key_method_code_len(code: &u32, key_prefix: &[u8]) ->  Result<u16> {
     if code == &RSA_CODE {
-        return Ok(*rsa_code_len(key_prefix).unwrap())
+        return Ok(*rsa_code_len(key_prefix)?)
     }
 
     //MOVE STATIC, any const for map? 
@@ -35,12 +36,12 @@ fn key_method_code_len(code: &u32, key_prefix: &[u8]) ->  Result<u16, &'static s
         (P521_CODE, 67),
     ]);
 
-    let val = *km_codes_len.get(code).ok_or("Key not supported").unwrap();
-    return Ok(val)
+    let val = *km_codes_len.get(code).ok_or(anyhow!("Key not supported"))?;
+    Ok(val)
 }
 
-fn is_key_method_code(code: &u32) ->  Result<bool, &'static str> {
-    return Ok(KEY_CODES.contains(code))
+fn is_key_method_code(code: &u32) ->  bool {
+    KEY_CODES.contains(code)
 }
 
 // 2048-bit modulus, public exponent 65537
@@ -52,24 +53,24 @@ const RSA_526: u16 = 526;
 const KEY_PREFIX_LEN: u8 = 9;
 
 
-fn rsa_code_len(key_prefix: &[u8]) -> Result<&u16, &'static str> {
+fn rsa_code_len(key_prefix: &[u8]) -> Result<&u16> {
     if key_prefix == &RSA_270_PREFIX {
         return Ok(&RSA_270) 
     } else if key_prefix == &RSA_526_PREFIX {
         return Ok(&RSA_526) 
     } else {
-        return Err("Not a valid RSA did:key")
+        return Err(anyhow!("Not a valid RSA did:key"))
     }
 }
 
-fn url_index(did: &str) -> Result<usize, &'static str> {
+fn url_index(did: &str) -> Result<usize> {
     for (i, c) in did.chars().enumerate() {
         if c == '?' || c == '#' || c == '/'{
             return Ok(i);
         }
     }
 
-    return Ok(did.len());
+    Ok(did.len())
 }
 
 pub struct Multidid {
@@ -80,15 +81,15 @@ pub struct Multidid {
 
 impl Multidid {
 
-    pub fn new(code: u32, id: Vec<u8>, url: Vec<u8>) -> Result<Self, &'static str> {
-        Ok(Self {
+    pub fn new(code: u32, id: Vec<u8>, url: Vec<u8>) -> Self {
+        Self {
             method_code: code,
             method_id_bytes: id,
             url_bytes: url,
-        })
+        }
     }
 
-    fn to_bytes(&self) -> Result<Vec<u8>, &'static str> {
+    fn to_bytes(&self) -> Result<Vec<u8>> {
         let method_code_offset = MULTIDID_CODEC.required_space();
         let method_id_offset = method_code_offset + &self.method_code.required_space();
         
@@ -96,12 +97,12 @@ impl Multidid {
         if &self.method_code == &ANY_METHOD_CODE {
             method_id_len = 0;
         } else if &self.method_code == &PKH_METHOD_CODE {
-            return Err("PKH Method not implemented");
-        } else if is_key_method_code(&self.method_code).unwrap(){
+            return Err(anyhow!("PKH Method not implemented"));
+        } else if is_key_method_code(&self.method_code) {
             let prefix = &self.method_id_bytes[0..KEY_PREFIX_LEN as usize];
-            method_id_len = key_method_code_len(&self.method_code, prefix).unwrap();
+            method_id_len = key_method_code_len(&self.method_code, prefix)?;
         } else {
-            return Err("No matching did method code found")
+            return Err(anyhow!("No matching did method code found"))
         }
     
         let url_len_offset = method_id_offset + method_id_len as usize;
@@ -116,48 +117,48 @@ impl Multidid {
         url_len.encode_var(&mut buff[url_len_offset..url_bytes_offset]);
         buff[url_bytes_offset..total_bytes_len].clone_from_slice(&self.url_bytes);
         
-        return Ok(buff);
+        Ok(buff)
     }
 
-    fn from_bytes(bytes: Vec<u8>) -> Result<Multidid, &'static str> {
-        let (_, did_code_len) = u32::decode_var(&bytes).ok_or("Decode fail")?;
-        let (method_code, method_code_len) = u32::decode_var(&bytes[did_code_len..]).ok_or("Decode fail")?;
+    fn from_bytes(bytes: Vec<u8>) -> Result<Multidid> {
+        let (_, did_code_len) = u32::decode_var(&bytes).ok_or(anyhow!("Decode fail"))?;
+        let (method_code, method_code_len) = u32::decode_var(&bytes[did_code_len..]).ok_or(anyhow!("Decode fail"))?;
         let method_id_offset = did_code_len + method_code_len;
 
         let method_id_len;
         if &method_code == &ANY_METHOD_CODE {
             method_id_len = 0;
         } else if &method_code == &PKH_METHOD_CODE {
-            return Err("PKH Method not implemented");
-        } else if is_key_method_code(&method_code).unwrap() {
+            return Err(anyhow!("PKH Method not implemented"));
+        } else if is_key_method_code(&method_code) {
             let prefix = &bytes[method_id_offset..method_id_offset + KEY_PREFIX_LEN as usize];
-            method_id_len = key_method_code_len(&method_code, prefix).unwrap();
+            method_id_len = key_method_code_len(&method_code, prefix)?;
         } else {
-            return Err("No matching did method code found")
+            return Err(anyhow!("No matching did method code found"))
         }
 
         let url_len_offset = method_id_offset + method_id_len as usize;
         let method_id = bytes[method_id_offset..url_len_offset].to_vec();
 
-        let (url_len, url_len_len) = u32::decode_var(&bytes[url_len_offset..]).ok_or("Decode fail")?;
+        let (url_len, url_len_len) = u32::decode_var(&bytes[url_len_offset..]).ok_or(anyhow!("Decode fail"))?;
         let url_bytes_offset = url_len_offset + url_len_len as usize;
         let url = bytes[url_bytes_offset..url_bytes_offset + url_len as usize].to_vec();
 
-        return Multidid::new(method_code, method_id, url);
+        Ok(Multidid::new(method_code, method_id, url))
     } 
     
-    pub fn to_multibase(&self, base: Base) -> Result<String, &'static str> {
-        let bytes = &self.to_bytes().unwrap();
+    pub fn to_multibase(&self, base: Base) -> Result<String> {
+        let bytes = &self.to_bytes()?;
         let bs58btc_str = multibase::encode(base, bytes);
-        return Ok(bs58btc_str)
+        Ok(bs58btc_str)
     }
 
-    pub fn from_multibase(multidid: &str) -> Result<Multidid, &'static str> {
-        let (_, bytes) = multibase::decode(multidid).unwrap();
-        return Multidid::from_bytes(bytes);
+    pub fn from_multibase(multidid: &str) -> Result<Multidid> {
+        let (_, bytes) = multibase::decode(multidid)?;
+        Multidid::from_bytes(bytes)
     }
     
-    pub fn from_string(did: &str) -> Result<Multidid, &'static str> {
+    pub fn from_string(did: &str) -> Result<Multidid> {
         let p: Vec<&str> = did.split(":").collect();
         let method = p[1];
         let suffix = p[2];
@@ -168,40 +169,40 @@ impl Multidid {
         let url = &suffix[index_break..suffix.len()];
 
         if method == "key" {
-            let (_, key_bytes) = multibase::decode(id).unwrap();
-            let (code, code_len) = u32::decode_var(&key_bytes).ok_or("Decode fail")?;
+            let (_, key_bytes) = multibase::decode(id)?;
+            let (code, code_len) = u32::decode_var(&key_bytes).ok_or(anyhow!("Decode fail"))?;
             let url_bytes = url.to_owned().into_bytes();
             let id_bytes = key_bytes[code_len..].to_vec();
-            return Multidid::new(code, id_bytes, url_bytes);
+            return Ok(Multidid::new(code, id_bytes, url_bytes));
         } else if method == "pkh" {
-            Err("PKH Method not implemented")
+            Err(anyhow!("PKH Method not implemented"))
         } else {
             let url_str = format!("{}:{}", &method, &suffix);
             let url_bytes = url_str.into_bytes();
 
-            return Multidid::new(ANY_METHOD_CODE, vec![], url_bytes);
+            return Ok(Multidid::new(ANY_METHOD_CODE, vec![], url_bytes));
         }
     }
 
-    pub fn to_string(&self) -> Result<String, &'static str> {
+    pub fn to_string(&self) -> Result<String> {
         if &self.method_code == &ANY_METHOD_CODE {
-            return Ok(format!("did:{}", str::from_utf8(&self.url_bytes).unwrap()));
+            return Ok(format!("did:{}", str::from_utf8(&self.url_bytes)?));
         } else if &self.method_code == &PKH_METHOD_CODE {
-            return Err("PKH Method not implemented");
-        } else if is_key_method_code(&self.method_code).unwrap() {
+            return Err(anyhow!("PKH Method not implemented"));
+        } else if is_key_method_code(&self.method_code) {
             let method_id_offset = &self.method_code.required_space();
             let prefix = &self.method_id_bytes[0..KEY_PREFIX_LEN as usize];
-            let method_id_len = key_method_code_len(&self.method_code, prefix).unwrap();
+            let method_id_len = key_method_code_len(&self.method_code, prefix)?;
             let total_bytes_len = method_id_offset + method_id_len as usize;
             let mut buff = vec![0;total_bytes_len];
             let _ = &self.method_code.encode_var(&mut buff);
             buff[*method_id_offset as usize..].clone_from_slice(&self.method_id_bytes);
             let bs58btc_str = multibase::encode(Base::Base58Btc, buff);
-            let url_str = str::from_utf8(&self.url_bytes).unwrap();
+            let url_str = str::from_utf8(&self.url_bytes)?;
 
             return Ok(format!("did:key:{}{}", bs58btc_str, url_str));
         } else {
-            return Err("Unable to convert to did string, no matching method");
+            return Err(anyhow!("Unable to convert to did string, no matching method"));
         }
     }
 }

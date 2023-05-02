@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 integer-encoding = "3.0.4"
 multibase = "0.9"
+anyhow = "1.0"
