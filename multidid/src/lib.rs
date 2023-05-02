@@ -96,7 +96,7 @@ impl Multidid {
         if &self.method_code == &ANY_METHOD_CODE {
             method_id_len = 0;
         } else if &self.method_code == &PKH_METHOD_CODE {
-            return Err("Not implemented");
+            return Err("PKH Method not implemented");
         } else if is_key_method_code(&self.method_code).unwrap(){
             let prefix = &self.method_id_bytes[0..KEY_PREFIX_LEN as usize];
             method_id_len = key_method_code_len(&self.method_code, prefix).unwrap();
@@ -128,7 +128,7 @@ impl Multidid {
         if &method_code == &ANY_METHOD_CODE {
             method_id_len = 0;
         } else if &method_code == &PKH_METHOD_CODE {
-            return Err("Not implemented");
+            return Err("PKH Method not implemented");
         } else if is_key_method_code(&method_code).unwrap() {
             let prefix = &bytes[method_id_offset..method_id_offset + KEY_PREFIX_LEN as usize];
             method_id_len = key_method_code_len(&method_code, prefix).unwrap();
@@ -136,31 +136,20 @@ impl Multidid {
             return Err("No matching did method code found")
         }
 
-        let mut method_id = vec![0;method_id_len as usize];
         let url_len_offset = method_id_offset + method_id_len as usize;
-        method_id.clone_from_slice(&bytes[method_id_offset..url_len_offset]);
+        let method_id = bytes[method_id_offset..url_len_offset].to_vec();
 
         let (url_len, url_len_len) = u32::decode_var(&bytes[url_len_offset..]).ok_or("Decode fail")?;
         let url_bytes_offset = url_len_offset + url_len_len as usize;
-
-        let mut url = vec![0;url_len as usize];
-        url.clone_from_slice(&bytes[url_bytes_offset..url_bytes_offset + url_len as usize]);
+        let url = bytes[url_bytes_offset..url_bytes_offset + url_len as usize].to_vec();
 
         return Multidid::new(method_code, method_id, url);
     } 
     
-    // return bs58btc_str only
-    pub fn to_multibase(&self) -> Result<String, &'static str> {
+    pub fn to_multibase(&self, base: Base) -> Result<String, &'static str> {
         let bytes = &self.to_bytes().unwrap();
-        let bs58btc_str = multibase::encode(Base::Base58Btc, bytes);
+        let bs58btc_str = multibase::encode(base, bytes);
         return Ok(bs58btc_str)
-    }
-
-    // TODO combine above, added for tests for now 
-    pub fn to_multibase_hex(&self) -> Result<String, &'static str> {
-        let bytes = &self.to_bytes().unwrap();
-        let hex_str = multibase::encode(Base::Base16Lower, bytes);
-        return Ok(hex_str)
     }
 
     pub fn from_multibase(multidid: &str) -> Result<Multidid, &'static str> {
@@ -185,9 +174,8 @@ impl Multidid {
             let id_bytes = key_bytes[code_len..].to_vec();
             return Multidid::new(code, id_bytes, url_bytes);
         } else if method == "pkh" {
-            Err("Not implemented")
+            Err("PKH Method not implemented")
         } else {
-            //TODO  dont need reference type str
             let url_str = format!("{}:{}", &method, &suffix);
             let url_bytes = url_str.into_bytes();
 
@@ -199,7 +187,7 @@ impl Multidid {
         if &self.method_code == &ANY_METHOD_CODE {
             return Ok(format!("did:{}", str::from_utf8(&self.url_bytes).unwrap()));
         } else if &self.method_code == &PKH_METHOD_CODE {
-            return Err("Not implemented");
+            return Err("PKH Method not implemented");
         } else if is_key_method_code(&self.method_code).unwrap() {
             let method_id_offset = &self.method_code.required_space();
             let prefix = &self.method_id_bytes[0..KEY_PREFIX_LEN as usize];
@@ -261,11 +249,11 @@ mod tests {
         let hex_md = "f9d1a550e6578616d706c653a313233343536";
         let mdid1 = Multidid::from_multibase(hex_md).unwrap();
         let mdid2 = Multidid::from_string(did_str).unwrap();
-        assert_eq!(mdid1.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid1.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid1.to_string().unwrap(), did_str);
-        assert_eq!(mdid2.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid2.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid2.to_string().unwrap(), did_str);
-        assert_eq!(mdid1.to_multibase().unwrap(), mdid2.to_multibase().unwrap());
+        assert_eq!(mdid1.to_multibase(Base::Base58Btc).unwrap(), mdid2.to_multibase(Base::Base58Btc).unwrap());
     }
 
     //spefication did:* vector 2
@@ -275,11 +263,11 @@ mod tests {
         let hex_md = "f9d1a551a6578616d706c653a3132333435363f76657273696f6e49643d31";
         let mdid1 = Multidid::from_multibase(hex_md).unwrap();
         let mdid2 = Multidid::from_string(did_str).unwrap();
-        assert_eq!(mdid1.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid1.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid1.to_string().unwrap(), did_str);
-        assert_eq!(mdid2.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid2.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid2.to_string().unwrap(), did_str);
-        assert_eq!(mdid1.to_multibase().unwrap(), mdid2.to_multibase().unwrap());
+        assert_eq!(mdid1.to_multibase(Base::Base58Btc).unwrap(), mdid2.to_multibase(Base::Base58Btc).unwrap());
     }
 
     // spefication did:key vector 1
@@ -289,11 +277,11 @@ mod tests {
         let hex_md = "f9d1aed013b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da2900";
         let mdid1 = Multidid::from_multibase(hex_md).unwrap();
         let mdid2 = Multidid::from_string(did_str).unwrap();
-        assert_eq!(mdid1.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid1.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid1.to_string().unwrap(), did_str);
-        assert_eq!(mdid2.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid2.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid2.to_string().unwrap(), did_str);
-        assert_eq!(mdid1.to_multibase().unwrap(), mdid2.to_multibase().unwrap());
+        assert_eq!(mdid1.to_multibase(Base::Base58Btc).unwrap(), mdid2.to_multibase(Base::Base58Btc).unwrap());
     }
 
     // spefication did:key vector 2
@@ -303,11 +291,11 @@ mod tests {
         let hex_md = "f9d1aed013b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da2931237a364d6b6954427a31796d75657041513448454859534631483871754735474c5656515233646a6458336d446f6f5770";
         let mdid1 = Multidid::from_multibase(hex_md).unwrap();
         let mdid2 = Multidid::from_string(did_str).unwrap();
-        assert_eq!(mdid1.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid1.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid1.to_string().unwrap(), did_str);
-        assert_eq!(mdid2.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid2.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid2.to_string().unwrap(), did_str);
-        assert_eq!(mdid1.to_multibase().unwrap(), mdid2.to_multibase().unwrap());
+        assert_eq!(mdid1.to_multibase(Base::Base58Btc).unwrap(), mdid2.to_multibase(Base::Base58Btc).unwrap());
     }
 
     #[test]
@@ -316,11 +304,11 @@ mod tests {
         let hex_md = "f9d1ae70103874c15c7fda20e539c6e5ba573c139884c351188799f5458b4b41f7924f235cd00";
         let mdid1 = Multidid::from_multibase(hex_md).unwrap();
         let mdid2 = Multidid::from_string(did_str).unwrap();
-        assert_eq!(mdid1.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid1.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid1.to_string().unwrap(), did_str);
-        assert_eq!(mdid2.to_multibase_hex().unwrap(), hex_md);
+        assert_eq!(mdid2.to_multibase(Base::Base16Lower).unwrap(), hex_md);
         assert_eq!(mdid2.to_string().unwrap(), did_str);
-        assert_eq!(mdid1.to_multibase().unwrap(), mdid2.to_multibase().unwrap());
+        assert_eq!(mdid1.to_multibase(Base::Base58Btc).unwrap(), mdid2.to_multibase(Base::Base58Btc).unwrap());
     }
     
     //RSA test vectors https://w3c-ccg.github.io/did-method-key/#rsa-2048
