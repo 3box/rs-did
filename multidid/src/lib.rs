@@ -16,20 +16,20 @@ pub enum DIDCodec {
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum DIDMethodCodec {
-    Any = 0x55, // raw
-    PKH = 0xca, // Chain Agnostic
+    Any, // raw
+    PKH, // Chain Agnostic
 }
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum DIDKeyCodec {
-    Secp256k1 = 0xe7, // secp256k1-pub
-    Bls12381g2 = 0xeb, // bls12_381-g2-pub
-    X25519 = 0xec, // x25519-pub
-    Ed25519 = 0xed, // ed25519-pub
-    P256 = 0x1200, // p256-pub
-    P384 = 0x1201, // p384-pub
-    P521 = 0x1202, // p521-pub
-    Rsa = 0x1205, // rsa-pub
+    Secp256k1,   // secp256k1-pub
+    Bls12381g2,  // bls12_381-g2-pub
+    X25519,      // x25519-pub
+    Ed25519,     // ed25519-pub
+    P256,        // p256-pub
+    P384,        // p384-pub
+    P521,        // p521-pub
+    Rsa,         // rsa-pub
 }
 
 impl From<DIDKeyCodec> for DIDCodec {
@@ -63,16 +63,16 @@ impl DIDCodec {
 
     fn from_u32(val: &u32) -> Result<DIDCodec> {
         match val {
-            0x55 => Ok(DIDCodec::DIDMethodCodec(DIDMethodCodec::Any)), 
-            0xca => Ok( DIDCodec::DIDMethodCodec(DIDMethodCodec::PKH)), 
-            0xe7 => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::Secp256k1)), 
-            0xeb => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::Bls12381g2)), 
-            0xec => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::X25519)),
-            0xed => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::Ed25519)),
-            0x1200 => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::P256)),
-            0x1201 => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::P384)),
-            0x1202 => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::P521)),
-            0x1205 => Ok(DIDCodec::DIDKeyCodec(DIDKeyCodec::Rsa)),
+            0x55 => Ok(DIDMethodCodec::Any.into()), 
+            0xca => Ok(DIDMethodCodec::PKH.into()), 
+            0xe7 => Ok(DIDKeyCodec::Secp256k1.into()), 
+            0xeb => Ok(DIDKeyCodec::Bls12381g2.into()), 
+            0xec => Ok(DIDKeyCodec::X25519.into()),
+            0xed => Ok(DIDKeyCodec::Ed25519.into()),
+            0x1200 => Ok(DIDKeyCodec::P256.into()),
+            0x1201 => Ok(DIDKeyCodec::P384.into()),
+            0x1202 => Ok(DIDKeyCodec::P521.into()),
+            0x1205 => Ok(DIDKeyCodec::Rsa.into()),
             _ => Err(anyhow!("Key not supported"))
         }
     }
@@ -158,18 +158,17 @@ impl Multidid {
         let method_code_offset = MULTIDID_CODEC.required_space();
         let method_id_offset = method_code_offset + &self.method_code.to_u32().required_space();
         
-        let method_id_len;
-        if &self.method_code == &DIDMethodCodec::Any.into() {
-            method_id_len = 0;
+        let method_id_len = if &self.method_code == &DIDMethodCodec::Any.into() {
+            0
         } else if &self.method_code == &DIDMethodCodec::PKH.into() {
             return Err(anyhow!("PKH Method not implemented"));
         } else if DIDKeyCodec::is_key_method(&self.method_code) {
             let prefix = &self.method_id_bytes[0..KEY_PREFIX_LEN as usize];
             let key_code = DIDKeyCodec::from_did_codec(&self.method_code)?;
-            method_id_len = key_code.key_len(prefix)?
+            key_code.key_len(prefix)?
         } else {
             return Err(anyhow!("No matching did method code found"))
-        }
+        };
     
         let url_len_offset = method_id_offset + method_id_len as usize;
         let url_len = &self.url_bytes.len();
@@ -192,18 +191,17 @@ impl Multidid {
         let method_id_offset = did_code_len + method_code_len;
         let method_code = DIDCodec::from_u32(&method_code)?;
 
-        let method_id_len;
-        if &method_code == &DIDMethodCodec::Any.into() {
-            method_id_len = 0;
+        let method_id_len = if &method_code == &DIDMethodCodec::Any.into() {
+            0
         } else if &method_code == &DIDMethodCodec::PKH.into() {
             return Err(anyhow!("PKH Method not implemented"));
         } else if DIDKeyCodec::is_key_method(&method_code) {
             let prefix = &bytes[method_id_offset..method_id_offset + KEY_PREFIX_LEN as usize];
             let key_code = DIDKeyCodec::from_did_codec(&method_code)?;
-            method_id_len = key_code.key_len(prefix)?;
+            key_code.key_len(prefix)?
         } else {
             return Err(anyhow!("No matching did method code found"))
-        }
+        };
 
         let url_len_offset = method_id_offset + method_id_len as usize;
         let method_id = bytes[method_id_offset..url_len_offset].to_vec();
